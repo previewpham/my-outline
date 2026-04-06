@@ -5,14 +5,29 @@
 
 import { useEffect, useState } from 'react'
 import { useDocumentStore } from './store/documentStore'
+import { useAuthStore } from './store/authStore'
+import { supabase } from './lib/supabase'
 import { Sidebar } from './components/Sidebar/Sidebar'
 import { Toolbar } from './components/Toolbar/Toolbar'
 import { OutlineEditor } from './components/OutlineEditor/OutlineEditor'
 import { MindMapView } from './components/MindMapView/MindMapView'
 import { PresentationMode } from './components/PresentationMode/PresentationMode'
+import { LoginPage } from './components/Auth/LoginPage'
 
 export default function App() {
   const { theme, viewMode, documents, activeDocumentId, setActiveDocument, createDocument, presentationMode } = useDocumentStore()
+  const { user, loading, setSession } = useAuthStore()
+
+  // Supabase 세션 감지
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session)
+    })
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session)
+    })
+    return () => subscription.unsubscribe()
+  }, [setSession])
 
   // 다크모드 초기화
   useEffect(() => {
@@ -36,6 +51,23 @@ export default function App() {
 
   // 모바일 사이드바 표시 여부
   const [sidebarOpen, setSidebarOpen] = useState(false)
+
+  // 로딩 중
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+        <svg className="animate-spin w-8 h-8 text-primary-500" viewBox="0 0 24 24" fill="none">
+          <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity="0.2" />
+          <path d="M12 2a10 10 0 0110 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+        </svg>
+      </div>
+    )
+  }
+
+  // 로그인 안 된 경우 → 로그인 페이지
+  if (!user) {
+    return <LoginPage />
+  }
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100">
