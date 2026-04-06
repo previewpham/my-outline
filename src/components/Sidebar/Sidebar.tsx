@@ -10,6 +10,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { useDocumentStore, useActiveDocument } from '../../store/documentStore'
+import { useAuthStore } from '../../store/authStore'
 import { collectAllTags } from '../../utils/tagUtils'
 import type { Document, Folder } from '../../types'
 
@@ -34,6 +35,7 @@ export function Sidebar() {
     setTagFilter,
   } = useDocumentStore()
 
+  const { user, signOut } = useAuthStore()
   const doc = useActiveDocument()
   const allTags = doc ? collectAllTags(doc.nodes) : []
 
@@ -459,6 +461,27 @@ export function Sidebar() {
           Enter 새 항목 · Tab 들여쓰기<br />
           Shift+Tab 내어쓰기 · Ctrl+Z 취소
         </p>
+      </div>
+
+      {/* 로그인 계정 + 로그아웃 */}
+      <div className="border-t border-gray-200 dark:border-gray-700 px-3 py-2 flex items-center gap-2">
+        <div className="flex-1 min-w-0">
+          <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate">
+            {user?.email}
+          </p>
+        </div>
+        <button
+          onClick={signOut}
+          className="
+            flex-shrink-0 text-[10px] px-2 py-1 rounded
+            text-gray-400 hover:text-red-500
+            hover:bg-red-50 dark:hover:bg-red-900/20
+            transition-colors
+          "
+          title="로그아웃"
+        >
+          로그아웃
+        </button>
       </div>
     </aside>
   )

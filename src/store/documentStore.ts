@@ -58,6 +58,14 @@ interface AppState {
   // 실행취소 스택
   undoStack: HistoryEntry[]
 
+  // 클라우드 동기화: 삭제된 ID 추적 (DB에서도 삭제하기 위해)
+  syncDeletedDocIds: string[]
+  syncDeletedFolderIds: string[]
+
+  // --- 클라우드 동기화 액션 ---
+  setCloudData: (documents: Document[], folders: Folder[]) => void
+  clearSyncDeleted: () => void
+
   // --- 문서 액션 ---
   createDocument: () => void
   deleteDocument: (id: string) => void          // 완전 삭제 (휴지통에서 사용)
@@ -168,6 +176,8 @@ export const useDocumentStore = create<AppState>()(
       focusMode: false,
       presentationMode: false,
       undoStack: [],
+      syncDeletedDocIds: [],
+      syncDeletedFolderIds: [],
 
       // --- 문서 액션 ---
 
@@ -189,6 +199,8 @@ export const useDocumentStore = create<AppState>()(
             const next = s.documents.find((d) => !d.deletedAt)
             s.activeDocumentId = next?.id ?? null
           }
+          // 클라우드에서도 삭제하도록 ID 기록
+          s.syncDeletedDocIds = [...s.syncDeletedDocIds, id]
         })
       },
 
@@ -277,6 +289,8 @@ export const useDocumentStore = create<AppState>()(
           s.documents.forEach((d) => {
             if (d.folderId === id) d.folderId = null
           })
+          // 클라우드에서도 삭제하도록 ID 기록
+          s.syncDeletedFolderIds = [...s.syncDeletedFolderIds, id]
         })
       },
 
@@ -461,6 +475,33 @@ export const useDocumentStore = create<AppState>()(
           const nodes = getActiveNodes(s as unknown as AppState)
           const updated = bulkOutdentNodes(nodes, multiSelectedIds)
           setActiveNodes(s as unknown as AppState, updated)
+        })
+      },
+
+      // --- 클라우드 동기화 ---
+
+      setCloudData(documents, folders) {
+        set((s) => {
+          if (documents.length > 0) {
+            s.documents = documents
+            // 활성 문서가 없거나 삭제된 경우 첫 번째 활성 문서로 설정
+            const activeDocs = documents.filter((d) => !d.deletedAt)
+            if (!s.activeDocumentId || !activeDocs.find((d) => d.id === s.activeDocumentId)) {
+              s.activeDocumentId = activeDocs[0]?.id ?? null
+            }
+          }
+          if (folders.length > 0) {
+            s.folders = folders
+          }
+          s.syncDeletedDocIds = []
+          s.syncDeletedFolderIds = []
+        })
+      },
+
+      clearSyncDeleted() {
+        set((s) => {
+          s.syncDeletedDocIds = []
+          s.syncDeletedFolderIds = []
         })
       },
 

@@ -13,10 +13,14 @@ import { OutlineEditor } from './components/OutlineEditor/OutlineEditor'
 import { MindMapView } from './components/MindMapView/MindMapView'
 import { PresentationMode } from './components/PresentationMode/PresentationMode'
 import { LoginPage } from './components/Auth/LoginPage'
+import { useCloudSync } from './hooks/useCloudSync'
 
 export default function App() {
   const { theme, viewMode, documents, activeDocumentId, setActiveDocument, createDocument, presentationMode } = useDocumentStore()
   const { user, loading, setSession } = useAuthStore()
+
+  // 클라우드 자동 동기화
+  useCloudSync()
 
   // Supabase 세션 감지
   useEffect(() => {
