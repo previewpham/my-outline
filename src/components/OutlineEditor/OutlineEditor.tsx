@@ -28,7 +28,9 @@ import {
   findNode,
   getRangeSelectedIds,
   findAncestorPath,
+  filterTopLevelSelected,
 } from '../../utils/nodeUtils'
+import type { OutlineNode as OutlineNodeType } from '../../types'
 import { SelectionContext } from './SelectionContext'
 import { ContextMenu } from './ContextMenu'
 
@@ -45,6 +47,8 @@ export function OutlineEditor() {
     bulkOutdent,
     focusedNodeId,
     setFocusedNode,
+    addFirstNode,
+    pasteNodes,
   } = useDocumentStore()
 
   // dnd-kit 드래그 상태
@@ -136,32 +140,110 @@ export function OutlineEditor() {
     [setFocusedNode, clearMultiSelected]
   )
 
+  // 드래그 선택이 방금 끝났는지 추적
+  const dragSelectEndedRef = useRef(false)
+
+  // 복사된 노드 저장 (내부 클립보드)
+  const clipboardRef = useRef<OutlineNodeType[]>([])
+
   // ─── 전역 마우스업 → 선택 종료 ───
   useEffect(() => {
     function onMouseUp() {
+      if (isSelectingRef.current && useDocumentStore.getState().multiSelectedIds.length > 1) {
+        dragSelectEndedRef.current = true
+      }
       isSelectingRef.current = false
     }
     window.addEventListener('mouseup', onMouseUp)
     return () => window.removeEventListener('mouseup', onMouseUp)
   }, [])
 
-  // ─── 다중 선택 중 Tab/Shift+Tab 전역 키 핸들러 ───
+  const checkAndConsumeDragSelectEnd = useCallback(() => {
+    if (dragSelectEndedRef.current) {
+      dragSelectEndedRef.current = false
+      return true
+    }
+    return false
+  }, [])
+
+  // ─── 노드 없을 때 Enter → 첫 노드 생성 ───
+  useEffect(() => {
+    if (nodes.length > 0) return
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault()
+        addFirstNode()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [nodes.length, addFirstNode])
+
+  // ─── 다중 선택 중 Tab/Shift+Tab + Ctrl+C 전역 키 핸들러 ───
   useEffect(() => {
     if (multiSelectedIds.length <= 1) return
 
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key !== 'Tab') return
-      e.preventDefault()
-      if (e.shiftKey) {
-        bulkOutdent()
-      } else {
-        bulkIndent()
+      // Tab 들여쓰기/내어쓰기
+      if (e.key === 'Tab') {
+        e.preventDefault()
+        if (e.shiftKey) {
+          bulkOutdent()
+        } else {
+          bulkIndent()
+        }
+        return
+      }
+
+      // Ctrl+C: 선택된 노드 복사
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+        // contentEditable에서 텍스트 선택 중이면 기본 동작 유지
+        const activeEl = document.activeElement
+        if (activeEl instanceof HTMLElement && activeEl.isContentEditable) return
+
+        e.preventDefault()
+        const allNodes = useDocumentStore.getState().documents.find(
+          (d) => d.id === useDocumentStore.getState().activeDocumentId
+        )?.nodes ?? []
+
+        const selectedSet = new Set(multiSelectedIds)
+        const topLevelIds = filterTopLevelSelected(allNodes, selectedSet)
+        clipboardRef.current = topLevelIds
+          .map((id) => findNode(allNodes, id))
+          .filter((n): n is OutlineNodeType => n !== null)
+
+        // 시스템 클립보드에 텍스트도 복사
+        const text = clipboardRef.current.map((n) => n.content).join('\n')
+        navigator.clipboard.writeText(text).catch(() => {})
       }
     }
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [multiSelectedIds.length, bulkIndent, bulkOutdent])
+  }, [multiSelectedIds, bulkIndent, bulkOutdent])
+
+  // ─── Ctrl+V: 클립보드 노드 붙여넣기 (항상 활성) ───
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (!(e.ctrlKey || e.metaKey) || e.key !== 'v') return
+      if (clipboardRef.current.length === 0) return
+
+      // contentEditable에서 일반 텍스트 붙여넣기는 기본 동작 유지
+      const activeEl = document.activeElement
+      if (activeEl instanceof HTMLElement && activeEl.isContentEditable) return
+
+      e.preventDefault()
+      const state = useDocumentStore.getState()
+      const afterId =
+        state.multiSelectedIds[state.multiSelectedIds.length - 1] ??
+        state.selectedNodeId ??
+        null
+      pasteNodes(clipboardRef.current, afterId)
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [pasteNodes])
 
   // ─── dnd-kit 이벤트 ───
 
@@ -221,6 +303,7 @@ export function OutlineEditor() {
       onNodeContextMenu: handleNodeContextMenu,
       onNodeFocusIn: handleNodeFocusIn,
       noteOpenRequestId,
+      checkAndConsumeDragSelectEnd,
     }}>
       <DndContext
         sensors={sensors}

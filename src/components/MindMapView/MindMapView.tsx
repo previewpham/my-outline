@@ -24,10 +24,12 @@ const nodeTypes = { mindmapNode: MindMapNode }
 
 function MindMapInner() {
   const doc = useActiveDocument()
-  const { theme } = useDocumentStore()
+  const { theme, mindmapTheme, setMindmapTheme, addFirstNode, updateNodeContent } = useDocumentStore()
   const containerRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
   const { fitView } = useReactFlow()
   const [exporting, setExporting] = useState(false)
+  const [firstNodeText, setFirstNodeText] = useState('')
 
   // 문서 노드가 바뀔 때마다 React Flow 노드/엣지 재계산
   const { nodes: layoutNodes, edges: layoutEdges } = useMemo(() => {
@@ -68,7 +70,7 @@ function MindMapInner() {
 
       await exportMindMapToPng(el, {
         filename: doc?.title ?? 'mindmap',
-        backgroundColor: isDark ? '#111827' : '#f8fafc',
+        backgroundColor: canvasBg,
         pixelRatio: 2,
       })
     } finally {
@@ -78,12 +80,71 @@ function MindMapInner() {
 
   const isDark = theme === 'dark'
 
+  // 마인드맵 테마별 캔버스 색상
+  const canvasBg = mindmapTheme === 'dark' ? '#0f172a'
+    : mindmapTheme === 'green' ? '#f0fdf4'
+    : isDark ? '#111827' : '#f8fafc'
+  const gridColor = mindmapTheme === 'dark' ? '#1e293b'
+    : mindmapTheme === 'green' ? '#bbf7d0'
+    : isDark ? '#374151' : '#cbd5e1'
+  const controlsBg = mindmapTheme === 'dark' ? '#1e293b'
+    : isDark ? '#1f2937' : 'white'
+  const controlsBorder = mindmapTheme === 'dark' ? '#334155'
+    : isDark ? '#374151' : '#e2e8f0'
+
+  function handleAddFirstNode() {
+    const text = firstNodeText.trim()
+    addFirstNode()
+    if (text) {
+      const newId = useDocumentStore.getState().selectedNodeId
+      if (newId) updateNodeContent(newId, text)
+    }
+    setFirstNodeText('')
+  }
+
   if (!doc || doc.nodes.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full text-gray-400">
+      <div className="flex items-center justify-center h-full text-gray-400 dark:text-gray-500">
         <div className="text-center">
-          <p className="text-4xl mb-3">🗺</p>
-          <p>아웃라인 항목을 추가하면 마인드맵이 표시됩니다</p>
+          <p className="text-4xl mb-4">🗺</p>
+          <p className="mb-4 text-sm">첫 번째 항목을 입력하고 Enter를 누르세요</p>
+          <input
+            ref={inputRef}
+            autoFocus
+            type="text"
+            value={firstNodeText}
+            onChange={(e) => setFirstNodeText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                e.preventDefault()
+                handleAddFirstNode()
+              }
+            }}
+            placeholder="항목 이름 입력..."
+            className="
+              w-64 px-4 py-2 rounded-xl text-sm text-center
+              border-2 border-dashed border-gray-300 dark:border-gray-600
+              bg-white dark:bg-gray-800
+              text-gray-700 dark:text-gray-200
+              placeholder-gray-400 dark:placeholder-gray-500
+              outline-none focus:border-primary-400
+              transition-colors
+            "
+          />
+          <button
+            onClick={handleAddFirstNode}
+            className="
+              mt-3 flex items-center gap-2 mx-auto px-4 py-2 rounded-lg text-sm font-medium
+              bg-primary-500 hover:bg-primary-600 text-white
+              transition-colors
+            "
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="6" y1="1" x2="6" y2="11" />
+              <line x1="1" y1="6" x2="11" y2="6" />
+            </svg>
+            추가하기
+          </button>
         </div>
       </div>
     )
@@ -103,22 +164,16 @@ function MindMapInner() {
         minZoom={0.1}
         maxZoom={2}
         proOptions={{ hideAttribution: true }}
-        style={{
-          background: isDark ? '#111827' : '#f8fafc',
-        }}
+        style={{ background: canvasBg }}
       >
         {/* 격자 배경 */}
-        <Background
-          color={isDark ? '#374151' : '#cbd5e1'}
-          gap={20}
-          size={1}
-        />
+        <Background color={gridColor} gap={20} size={1} />
 
         {/* 줌/피트 컨트롤 */}
         <Controls
           style={{
-            background: isDark ? '#1f2937' : 'white',
-            border: `1px solid ${isDark ? '#374151' : '#e2e8f0'}`,
+            background: controlsBg,
+            border: `1px solid ${controlsBorder}`,
             borderRadius: 8,
           }}
         />
@@ -126,8 +181,8 @@ function MindMapInner() {
         {/* 미니맵 */}
         <MiniMap
           style={{
-            background: isDark ? '#1f2937' : '#f1f5f9',
-            border: `1px solid ${isDark ? '#374151' : '#e2e8f0'}`,
+            background: controlsBg,
+            border: `1px solid ${controlsBorder}`,
           }}
           nodeColor={(n) => {
             const color = (n.data as { color?: string })?.color
@@ -153,6 +208,31 @@ function MindMapInner() {
           더블클릭으로 접기/펼치기 · 스크롤로 줌 · 드래그로 이동
         </div>
       </ReactFlow>
+
+      {/* 마인드맵 테마 전환 버튼 */}
+      <div className="absolute top-3 left-3 z-10 flex items-center gap-1 bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm rounded-lg px-2 py-1.5 shadow-md border border-gray-200 dark:border-gray-600">
+        <span className="text-[10px] text-gray-400 mr-1">테마</span>
+        {([
+          { key: 'blue', label: '🔵', title: '블루 (기본)' },
+          { key: 'green', label: '🟢', title: '그린 (자연)' },
+          { key: 'dark', label: '⚫', title: '다크' },
+        ] as const).map(({ key, label, title }) => (
+          <button
+            key={key}
+            onClick={() => setMindmapTheme(key)}
+            title={title}
+            className={`
+              w-6 h-6 rounded-md text-xs flex items-center justify-center transition-all
+              ${mindmapTheme === key
+                ? 'bg-primary-100 dark:bg-primary-900/40 ring-2 ring-primary-400'
+                : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+              }
+            `}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
 
       {/* PNG 내보내기 버튼 (우상단 오버레이, 툴바에서도 트리거 가능) */}
       <button

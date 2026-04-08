@@ -9,25 +9,42 @@ import type { NodeProps } from 'reactflow'
 import type { MindMapNodeData } from './mindmapLayout'
 import { useDocumentStore } from '../../store/documentStore'
 
-// 깊이별 배경 색상 팔레트 (파스텔 톤)
-const DEPTH_COLORS = [
-  { bg: '#eff6ff', border: '#3b82f6', text: '#1d4ed8' },  // depth 0: 파랑 (루트)
-  { bg: '#f0fdf4', border: '#22c55e', text: '#15803d' },  // depth 1: 초록
-  { bg: '#fefce8', border: '#eab308', text: '#854d0e' },  // depth 2: 노랑
-  { bg: '#fff7ed', border: '#f97316', text: '#c2410c' },  // depth 3: 주황
-  { bg: '#fdf4ff', border: '#a855f7', text: '#6b21a8' },  // depth 4+: 보라
-]
+// 테마별 깊이 색상 팔레트
+const THEME_COLORS = {
+  blue: [
+    { bg: '#eff6ff', border: '#3b82f6', text: '#1d4ed8' },  // depth 0: 파랑 루트
+    { bg: '#f0fdf4', border: '#22c55e', text: '#15803d' },  // depth 1: 초록
+    { bg: '#fefce8', border: '#eab308', text: '#854d0e' },  // depth 2: 노랑
+    { bg: '#fff7ed', border: '#f97316', text: '#c2410c' },  // depth 3: 주황
+    { bg: '#fdf4ff', border: '#a855f7', text: '#6b21a8' },  // depth 4+: 보라
+  ],
+  green: [
+    { bg: '#dcfce7', border: '#16a34a', text: '#14532d' },  // depth 0: 진초록 루트
+    { bg: '#ecfdf5', border: '#10b981', text: '#065f46' },  // depth 1: 에메랄드
+    { bg: '#f0fdf4', border: '#4ade80', text: '#166534' },  // depth 2: 연초록
+    { bg: '#fefce8', border: '#a3e635', text: '#365314' },  // depth 3: 연두
+    { bg: '#f7fee7', border: '#84cc16', text: '#3f6212' },  // depth 4+: 라임
+  ],
+  dark: [
+    { bg: '#1e3a5f', border: '#60a5fa', text: '#bfdbfe' },  // depth 0: 다크블루 루트
+    { bg: '#1a2e1a', border: '#34d399', text: '#a7f3d0' },  // depth 1: 다크그린
+    { bg: '#2d2506', border: '#fbbf24', text: '#fde68a' },  // depth 2: 다크옐로
+    { bg: '#2d1a1a', border: '#f87171', text: '#fecaca' },  // depth 3: 다크레드
+    { bg: '#1e1a2d', border: '#818cf8', text: '#c7d2fe' },  // depth 4+: 다크퍼플
+  ],
+}
 
-function getDepthStyle(depth: number) {
-  return DEPTH_COLORS[Math.min(depth, DEPTH_COLORS.length - 1)]
+function getDepthStyle(depth: number, mindmapTheme: 'blue' | 'green' | 'dark') {
+  const palette = THEME_COLORS[mindmapTheme]
+  return palette[Math.min(depth, palette.length - 1)]
 }
 
 export const MindMapNode = memo(function MindMapNode({
   data,
   selected,
 }: NodeProps<MindMapNodeData>) {
-  const { setTagFilter, tagFilter } = useDocumentStore()
-  const depthStyle = getDepthStyle(data.depth)
+  const { setTagFilter, tagFilter, mindmapTheme } = useDocumentStore()
+  const depthStyle = getDepthStyle(data.depth, mindmapTheme)
 
   // 커스텀 색상이 있으면 우선 적용
   const bgColor = data.color ? `${data.color}18` : depthStyle.bg

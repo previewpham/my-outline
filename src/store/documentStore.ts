@@ -19,6 +19,7 @@ import {
   flattenTree,
   bulkIndentNodes,
   bulkOutdentNodes,
+  cloneNodeTree,
 } from '../utils/nodeUtils'
 import { parseTags } from '../utils/tagUtils'
 
@@ -40,6 +41,7 @@ interface AppState {
   selectedNodeId: string | null
   viewMode: ViewMode
   theme: Theme
+  mindmapTheme: 'blue' | 'green' | 'dark'
   searchQuery: string
   tagFilter: string
 
@@ -84,7 +86,9 @@ interface AppState {
   toggleFolderCollapse: (id: string) => void
 
   // --- 노드 액션 ---
+  addFirstNode: () => void
   addNodeAfter: (afterId: string) => void
+  pasteNodes: (nodes: OutlineNode[], afterId: string | null) => void
   addChildNode: (parentId: string) => void
   deleteNode: (id: string) => void
   updateNodeContent: (id: string, content: string) => void
@@ -115,6 +119,7 @@ interface AppState {
   // --- 뷰 / 테마 액션 ---
   setViewMode: (mode: ViewMode) => void
   setTheme: (theme: Theme) => void
+  setMindmapTheme: (theme: 'blue' | 'green' | 'dark') => void
   setSelectedNode: (id: string | null) => void
   setSearchQuery: (q: string) => void
   setTagFilter: (tag: string) => void
@@ -169,6 +174,7 @@ export const useDocumentStore = create<AppState>()(
       selectedNodeId: null,
       viewMode: 'outline',
       theme: 'light',
+      mindmapTheme: 'blue',
       searchQuery: '',
       tagFilter: '',
       multiSelectedIds: [],
@@ -309,6 +315,36 @@ export const useDocumentStore = create<AppState>()(
       },
 
       // --- 노드 액션 ---
+
+      addFirstNode() {
+        set((s) => {
+          get().pushHistory()
+          const newNode = createNode(null)
+          setActiveNodes(s as unknown as AppState, [newNode])
+          s.selectedNodeId = newNode.id
+          s.multiSelectedIds = []
+        })
+      },
+
+      pasteNodes(nodesToPaste, afterId) {
+        if (nodesToPaste.length === 0) return
+        set((s) => {
+          get().pushHistory()
+          let updated = getActiveNodes(s as unknown as AppState)
+          let insertAfterId = afterId
+          for (const node of nodesToPaste) {
+            const cloned = cloneNodeTree(node, null)
+            if (insertAfterId) {
+              updated = insertNodeAt(updated, insertAfterId, cloned, 'after')
+              insertAfterId = cloned.id
+            } else {
+              updated = [...updated, cloned]
+            }
+          }
+          setActiveNodes(s as unknown as AppState, updated)
+          s.multiSelectedIds = []
+        })
+      },
 
       addNodeAfter(afterId) {
         set((s) => {
@@ -536,6 +572,10 @@ export const useDocumentStore = create<AppState>()(
         }
       },
 
+      setMindmapTheme(theme) {
+        set((s) => { s.mindmapTheme = theme })
+      },
+
       setSelectedNode(id) {
         set((s) => { s.selectedNodeId = id })
       },
@@ -575,6 +615,7 @@ export const useDocumentStore = create<AppState>()(
         documents: state.documents,
         activeDocumentId: state.activeDocumentId,
         theme: state.theme,
+        mindmapTheme: state.mindmapTheme,
         folders: state.folders,
       }),
     }

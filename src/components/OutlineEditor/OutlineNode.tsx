@@ -51,7 +51,7 @@ export function OutlineNode({ node, depth, searchQuery }: OutlineNodeProps) {
   const images = node.images ?? []
 
   // 선택 컨텍스트 (OutlineEditor에서 제공)
-  const { onNodeMouseDown, onNodeMouseEnter, onNodeContextMenu, onNodeFocusIn, noteOpenRequestId } = useSelectionContext()
+  const { onNodeMouseDown, onNodeMouseEnter, onNodeContextMenu, onNodeFocusIn, noteOpenRequestId, checkAndConsumeDragSelectEnd } = useSelectionContext()
 
   // 컨텍스트 메뉴에서 "메모 편집" 클릭 시 이 노드의 노트를 자동으로 열기
   useEffect(() => {
@@ -109,10 +109,12 @@ export function OutlineNode({ node, depth, searchQuery }: OutlineNodeProps) {
     : false
 
   const handleSelect = useCallback(() => {
+    // 드래그 선택이 방금 끝난 경우 → 선택 유지 (해제하지 않음)
+    if (checkAndConsumeDragSelectEnd()) return
     setSelectedNode(node.id)
     // 편집 포커스를 잡으면 다중 선택은 해제
     if (multiSelectedIds.length > 0) clearMultiSelected()
-  }, [node.id, setSelectedNode, multiSelectedIds.length, clearMultiSelected])
+  }, [node.id, setSelectedNode, multiSelectedIds.length, clearMultiSelected, checkAndConsumeDragSelectEnd])
 
   const indentPx = Math.min(depth * 20, 300)
 

@@ -188,7 +188,7 @@ export function NodeInput({
 
   // 헤딩 레벨별 폰트 클래스
   const headingClass = getHeadingClass(headingLevel)
-  const baseClass = `flex-1 min-w-0 break-words leading-relaxed ${headingClass}`
+  const baseClass = `flex-1 min-w-0 break-words leading-relaxed text-gray-900 dark:text-gray-100 ${headingClass}`
 
   // ─── 비편집 모드 렌더링 ───
   if (!isEditing) {

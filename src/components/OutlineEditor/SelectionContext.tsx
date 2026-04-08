@@ -17,6 +17,11 @@ interface SelectionContextValue {
   onNodeFocusIn: (nodeId: string) => void
   /** 컨텍스트 메뉴에서 노트 열기 요청 중인 nodeId (해당 노드가 자신의 note를 열어야 함) */
   noteOpenRequestId: string | null
+  /**
+   * 드래그 선택이 방금 끝났는지 확인하고 플래그를 소비(초기화)
+   * true 반환 시: 드래그 끝에서 발생한 클릭이므로 선택 해제하지 말 것
+   */
+  checkAndConsumeDragSelectEnd: () => boolean
 }
 
 export const SelectionContext = createContext<SelectionContextValue>({
@@ -25,6 +30,7 @@ export const SelectionContext = createContext<SelectionContextValue>({
   onNodeContextMenu: () => {},
   onNodeFocusIn: () => {},
   noteOpenRequestId: null,
+  checkAndConsumeDragSelectEnd: () => false,
 })
 
 export const useSelectionContext = () => useContext(SelectionContext)

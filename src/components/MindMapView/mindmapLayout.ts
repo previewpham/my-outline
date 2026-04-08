@@ -19,8 +19,8 @@ export interface MindMapNodeData {
 }
 
 // 레이아웃 상수
-const H_SPACING = 220  // 가로 간격 (노드 중심 간 거리)
-const V_SPACING = 56   // 세로 간격 (형제 노드 간 거리)
+const H_SPACING = 300  // 가로 간격 (노드 중심 간 거리, maxWidth 240보다 커야 겹침 없음)
+const V_SPACING = 72   // 세로 간격 (형제 노드 간 거리)
 const ROOT_X = 0
 const ROOT_Y = 0
 
@@ -79,8 +79,8 @@ function buildLayout(
       type: 'smoothstep',
       style: {
         stroke: node.color ?? '#94a3b8',
-        strokeWidth: Math.max(3 - depth, 1),
-        opacity: 0.6,
+        strokeWidth: depth === 0 ? 2.5 : 1.5,
+        opacity: 0.85,
       },
       animated: false,
     })

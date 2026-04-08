@@ -10,6 +10,17 @@ export function generateId(): string {
   return `node_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
 }
 
+/** 노드 트리를 새 ID로 깊은 복사 (붙여넣기용) */
+export function cloneNodeTree(node: OutlineNode, parentId: string | null = null): OutlineNode {
+  const newId = generateId()
+  return {
+    ...node,
+    id: newId,
+    parentId,
+    children: node.children.map((child) => cloneNodeTree(child, newId)),
+  }
+}
+
 /** 빈 노드 생성 */
 export function createNode(parentId: string | null = null): OutlineNode {
   return {
