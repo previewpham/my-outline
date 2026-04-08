@@ -26,6 +26,23 @@ export function sanitizeRichText(html: string): string {
 }
 
 /**
+ * 마크다운 인라인 문법을 HTML로 변환
+ * **굵게**, *기울기*, ~~취소선~~, `코드`
+ * 이미 HTML 이스케이프된 텍스트에 적용 (태그 하이라이트 전에 호출)
+ */
+export function applyMarkdown(escaped: string): string {
+  return escaped
+    // 인라인 코드: `code` (다른 패턴보다 먼저 처리)
+    .replace(/`([^`\n]+)`/g, '<code class="md-code">$1</code>')
+    // 취소선: ~~text~~
+    .replace(/~~([^~\n]+)~~/g, '<s>$1</s>')
+    // 굵게: **text** (이탤릭보다 먼저)
+    .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+    // 기울기: *text* (단일 *)
+    .replace(/\*([^*\n]+)\*/g, '<em>$1</em>')
+}
+
+/**
  * 텍스트에서 #태그와 @태그를 색상 강조 HTML로 변환
  * 비편집 모드에서 dangerouslySetInnerHTML에 사용
  */
@@ -42,13 +59,14 @@ export function applyTagHighlightHtml(html: string): string {
 }
 
 /**
- * 일반 텍스트(비 HTML)에서 #태그/@태그를 하이라이트한 HTML 반환
+ * 일반 텍스트(비 HTML)에서 마크다운 + #태그/@태그를 하이라이트한 HTML 반환
  * richText가 없을 때 사용
  */
 export function textToHighlightedHtml(text: string): string {
   // XSS 방지: <, > 먼저 이스케이프
   const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  return applyTagHighlightHtml(escaped)
+  // 마크다운 파싱 → 태그 하이라이트 순서로 적용
+  return applyTagHighlightHtml(applyMarkdown(escaped))
 }
 
 /**

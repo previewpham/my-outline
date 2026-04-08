@@ -26,6 +26,7 @@ export interface OutlineNode {
   headingLevel: HeadingLevel  // 헤딩 스타일 (null=일반, 1=H1, 2=H2, 3=H3)
   richText: string            // HTML 서식 내용 (볼드/이탤릭 등, 빈 문자열이면 미사용)
   images: NodeImage[]         // 첨부 이미지 목록
+  listType?: 'none' | 'numbered'  // 리스트 타입 (undefined/none=기본, numbered=번호 리스트)
 }
 
 /** 문서 (여러 노드를 담는 단위) */

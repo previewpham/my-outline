@@ -16,20 +16,38 @@ import { NoteEditor } from './NoteEditor'
 import { Lightbox } from './Lightbox'
 import { useSelectionContext } from './SelectionContext'
 import { processImageFile } from '../../utils/imageUtils'
+import { parseDateFromContent, formatDateLabel, getDateStatus, parseRecurrenceFromContent, formatNextRecurrenceLabel } from '../../utils/dateUtils'
 
 interface OutlineNodeProps {
   node: NodeType
   depth: number
   searchQuery: string
+  listNumber?: number  // 번호 리스트일 때 표시할 순번
 }
 
-export function OutlineNode({ node, depth, searchQuery }: OutlineNodeProps) {
+/** 형제 노드 배열에서 각 노드의 번호 리스트 순번을 계산 (비연속 시 초기화) */
+export function computeListNumbers(siblings: NodeType[]): Record<string, number> {
+  const result: Record<string, number> = {}
+  let counter = 0
+  for (const n of siblings) {
+    if (n.listType === 'numbered') {
+      counter++
+      result[n.id] = counter
+    } else {
+      counter = 0
+    }
+  }
+  return result
+}
+
+export function OutlineNode({ node, depth, searchQuery, listNumber }: OutlineNodeProps) {
   const [noteOpen, setNoteOpen] = useState(false)
   const [colorPickerOpen, setColorPickerOpen] = useState(false)
   // 라이트박스: 열린 이미지 인덱스 (null=닫힘)
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
   // 이미지 업로드 중 로딩 상태
   const [imageUploading, setImageUploading] = useState(false)
+  const [datePickerOpen, setDatePickerOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const {
@@ -39,13 +57,23 @@ export function OutlineNode({ node, depth, searchQuery }: OutlineNodeProps) {
     toggleNodeComplete,
     setNodeColor,
     setNodeHeading,
+    setNodeListType,
     deleteNode,
     addNodeImage,
     removeNodeImage,
     multiSelectedIds,
+    toggleMultiSelected,
     clearMultiSelected,
     focusMode,
+    setNodeDate,
+    dateFormat,
   } = useDocumentStore()
+
+  // 노드 content에서 날짜 파싱 (2그룹)
+  const parsedDate = parseDateFromContent(node.content)
+  const dateStatus = parsedDate ? getDateStatus(parsedDate) : null
+  // 반복 날짜 파싱 (2번 기능)
+  const recurrence = parseRecurrenceFromContent(node.content)
 
   // 이미지 배열 (images 필드가 없는 구 데이터도 안전하게 처리)
   const images = node.images ?? []
@@ -129,6 +157,20 @@ export function OutlineNode({ node, depth, searchQuery }: OutlineNodeProps) {
     rowBg = 'bg-primary-50 dark:bg-primary-900/20'
   }
 
+  // ── 기한 초과 강조 (3번 기능) ──
+  // 완료된 항목은 강조 없음, 다중선택 중이면 다중선택 스타일 우선
+  // 왼쪽 컬러 바 + 미세한 배경 틴트로 강조
+  let dateHighlightClass = ''
+  if (!node.completed && !isMultiSelected && dateStatus) {
+    if (dateStatus === 'overdue') {
+      dateHighlightClass =
+        'border-l-2 border-l-red-400 dark:border-l-red-500 bg-red-50/40 dark:bg-red-900/10'
+    } else if (dateStatus === 'today') {
+      dateHighlightClass =
+        'border-l-2 border-l-orange-400 dark:border-l-orange-500 bg-orange-50/40 dark:bg-orange-900/10'
+    }
+  }
+
   // 집중 모드: 선택되지 않은 노드는 흐리게
   const dimmed = focusMode && !isSelected && multiSelectedIds.length === 0
 
@@ -140,7 +182,7 @@ export function OutlineNode({ node, depth, searchQuery }: OutlineNodeProps) {
     >
       {/* 노드 행 */}
       <div
-        className={`flex items-start gap-1 py-0.5 pr-2 rounded-md ${rowBg}`}
+        className={`flex items-start gap-1 py-0.5 pr-2 rounded-md ${rowBg} ${dateHighlightClass}`}
         style={{ paddingLeft: `${indentPx + 4}px` }}
         // 마우스 다운: 다중 선택 시작
         onMouseDown={(e) => onNodeMouseDown(node.id, e)}
@@ -152,32 +194,55 @@ export function OutlineNode({ node, depth, searchQuery }: OutlineNodeProps) {
           onNodeContextMenu(node.id, e)
         }}
       >
-        {/* 드래그 핸들 */}
-        <button
-          {...attributes}
-          {...listeners}
-          className="
-            flex-shrink-0 w-4 h-5 flex items-center justify-center
-            text-gray-300 dark:text-gray-600
-            opacity-0 group-hover:opacity-100
-            cursor-grab active:cursor-grabbing
-            hover:text-gray-500 dark:hover:text-gray-400
-            mt-0.5
-          "
-          tabIndex={-1}
-          aria-label="드래그 핸들"
-          // 드래그 핸들 mousedown은 선택 시작 이벤트로 올라가지 않게 차단
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor">
-            <circle cx="3" cy="2.5" r="1.2" />
-            <circle cx="7" cy="2.5" r="1.2" />
-            <circle cx="3" cy="7" r="1.2" />
-            <circle cx="7" cy="7" r="1.2" />
-            <circle cx="3" cy="11.5" r="1.2" />
-            <circle cx="7" cy="11.5" r="1.2" />
-          </svg>
-        </button>
+        {/* 드래그 핸들 / 선택 체크박스 */}
+        <div className="flex-shrink-0 w-4 h-5 flex items-center justify-center mt-0.5 relative">
+          {/* 선택 모드: 체크박스 표시 */}
+          {multiSelectedIds.length > 0 ? (
+            <button
+              onClick={(e) => { e.stopPropagation(); toggleMultiSelected(node.id) }}
+              onMouseDown={(e) => e.stopPropagation()}
+              className={`
+                w-3.5 h-3.5 rounded border-2 flex items-center justify-center transition-colors
+                ${isMultiSelected
+                  ? 'bg-blue-500 border-blue-500 text-white'
+                  : 'border-gray-300 dark:border-gray-600 hover:border-blue-400'
+                }
+              `}
+              tabIndex={-1}
+              aria-label="선택"
+            >
+              {isMultiSelected && (
+                <svg width="8" height="6" viewBox="0 0 8 6" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M1 3l2 2 4-4" />
+                </svg>
+              )}
+            </button>
+          ) : (
+            /* 일반 모드: 드래그 핸들 */
+            <button
+              {...attributes}
+              {...listeners}
+              className="
+                text-gray-300 dark:text-gray-600
+                opacity-0 group-hover:opacity-100
+                cursor-grab active:cursor-grabbing
+                hover:text-gray-500 dark:hover:text-gray-400
+              "
+              tabIndex={-1}
+              aria-label="드래그 핸들"
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor">
+                <circle cx="3" cy="2.5" r="1.2" />
+                <circle cx="7" cy="2.5" r="1.2" />
+                <circle cx="3" cy="7" r="1.2" />
+                <circle cx="7" cy="7" r="1.2" />
+                <circle cx="3" cy="11.5" r="1.2" />
+                <circle cx="7" cy="11.5" r="1.2" />
+              </svg>
+            </button>
+          )}
+        </div>
 
         {/* 접기/펼치기 버튼 */}
         <button
@@ -223,13 +288,22 @@ export function OutlineNode({ node, depth, searchQuery }: OutlineNodeProps) {
           )}
         </button>
 
-        {/* 노드 불릿(점) + 줌인 버튼 */}
+        {/* 노드 불릿(점 or 번호) + 줌인 버튼 */}
         <span className="flex-shrink-0 relative flex items-center justify-center mt-2">
-          {/* 일반 상태: 불릿 점 */}
-          <span
-            className="w-1.5 h-1.5 rounded-full bg-gray-400 dark:bg-gray-500 group-hover:opacity-0 transition-opacity"
-            style={{ backgroundColor: node.color ?? undefined }}
-          />
+          {/* 일반 상태: 번호 리스트면 숫자, 아니면 불릿 점 */}
+          {listNumber !== undefined ? (
+            <span
+              className="text-xs font-medium text-gray-500 dark:text-gray-400 min-w-[1.2rem] text-right pr-0.5 group-hover:opacity-0 transition-opacity"
+              style={{ color: node.color ?? undefined }}
+            >
+              {listNumber}.
+            </span>
+          ) : (
+            <span
+              className="w-1.5 h-1.5 rounded-full bg-gray-400 dark:bg-gray-500 group-hover:opacity-0 transition-opacity"
+              style={{ backgroundColor: node.color ?? undefined }}
+            />
+          )}
           {/* 호버 시: 줌인 버튼 */}
           <button
             onClick={(e) => { e.stopPropagation(); onNodeFocusIn(node.id) }}
@@ -259,7 +333,96 @@ export function OutlineNode({ node, depth, searchQuery }: OutlineNodeProps) {
           headingLevel={node.headingLevel ?? null}
           isSelected={isSelected}
           onFocus={handleSelect}
+          onToggleNote={() => setNoteOpen((prev) => !prev)}
         />
+
+        {/* 반복 날짜 배지 (2번 기능) */}
+        {recurrence && (
+          <div className="flex-shrink-0 mt-0.5">
+            <button
+              onClick={(e) => { e.stopPropagation(); toggleNodeComplete(node.id) }}
+              onMouseDown={(e) => e.stopPropagation()}
+              title={`완료 체크하면 다음 반복으로 갱신 (${recurrence.label})`}
+              className={`
+                flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full border whitespace-nowrap
+                ${node.completed
+                  ? 'bg-gray-100 border-gray-200 text-gray-400 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-500'
+                  : 'bg-purple-50 border-purple-200 text-purple-700 dark:bg-purple-900/20 dark:border-purple-800 dark:text-purple-300'
+                }
+              `}
+            >
+              {/* 반복 아이콘 */}
+              <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M2 8a6 6 0 016-6 6 6 0 014.5 2" />
+                <path d="M14 8a6 6 0 01-6 6 6 6 0 01-4.5-2" />
+                <path d="M11.5 2l1.5 2-2 1M4.5 14l-1.5-2 2-1" />
+              </svg>
+              {recurrence.label}
+              {/* 다음 날짜 힌트 */}
+              {!node.completed && (
+                <span className="opacity-60 ml-0.5">
+                  {formatNextRecurrenceLabel(recurrence)}
+                </span>
+              )}
+            </button>
+          </div>
+        )}
+
+        {/* 날짜 배지 (2그룹) */}
+        {parsedDate && (
+          <div className="relative flex-shrink-0">
+            <button
+              onClick={(e) => { e.stopPropagation(); setDatePickerOpen((v) => !v) }}
+              onMouseDown={(e) => e.stopPropagation()}
+              title="날짜 변경"
+              className={`
+                flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full border whitespace-nowrap mt-0.5
+                ${node.completed
+                  ? 'bg-gray-100 border-gray-200 text-gray-400 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-500'
+                  : dateStatus === 'overdue'
+                  ? 'bg-red-50 border-red-200 text-red-600 dark:bg-red-900/20 dark:border-red-800 dark:text-red-400'
+                  : dateStatus === 'today'
+                  ? 'bg-orange-50 border-orange-200 text-orange-600 dark:bg-orange-900/20 dark:border-orange-800 dark:text-orange-400'
+                  : 'bg-blue-50 border-blue-200 text-blue-600 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-400'
+                }
+              `}
+            >
+              <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8">
+                <rect x="1" y="2" width="14" height="13" rx="2" />
+                <path d="M5 1v3M11 1v3M1 7h14" />
+              </svg>
+              {formatDateLabel(parsedDate, dateFormat)}
+            </button>
+
+            {/* 달력 팝업 */}
+            {datePickerOpen && (
+              <div
+                className="absolute top-8 left-0 z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-3 min-w-[180px]"
+                onMouseLeave={() => setDatePickerOpen(false)}
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                <input
+                  type="date"
+                  defaultValue={parsedDate}
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      setNodeDate(node.id, e.target.value)
+                      setDatePickerOpen(false)
+                    }
+                  }}
+                  className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded px-2 py-1 dark:bg-gray-700 dark:text-gray-200"
+                  autoFocus
+                />
+                <button
+                  onClick={(e) => { e.stopPropagation(); setNodeDate(node.id, null); setDatePickerOpen(false) }}
+                  className="mt-2 w-full text-left text-xs text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 px-2 py-1 rounded"
+                >
+                  🗑 날짜 제거
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* 메모 아이콘 (메모가 있으면 표시) */}
         {node.note && (
@@ -383,6 +546,25 @@ export function OutlineNode({ node, depth, searchQuery }: OutlineNodeProps) {
                   )
                 })}
               </div>
+
+              <div className="border-t border-gray-100 dark:border-gray-700 my-1" />
+
+              {/* 번호 리스트 토글 */}
+              <button
+                onClick={() => {
+                  setNodeListType(node.id, node.listType === 'numbered' ? 'none' : 'numbered')
+                  setColorPickerOpen(false)
+                }}
+                className={`
+                  w-full text-left text-xs px-2 py-1 rounded
+                  ${node.listType === 'numbered'
+                    ? 'text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20'
+                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
+                  }
+                `}
+              >
+                🔢 번호 리스트 {node.listType === 'numbered' ? '(해제)' : ''}
+              </button>
 
               <div className="border-t border-gray-100 dark:border-gray-700 my-1" />
               <div className="text-xs text-gray-400 px-2 mb-1">색상</div>
@@ -524,14 +706,18 @@ export function OutlineNode({ node, depth, searchQuery }: OutlineNodeProps) {
             items={node.children.map((c) => c.id)}
             strategy={verticalListSortingStrategy}
           >
-            {node.children.map((child) => (
-              <OutlineNode
-                key={child.id}
-                node={child}
-                depth={depth + 1}
-                searchQuery={searchQuery}
-              />
-            ))}
+            {(() => {
+              const childListNums = computeListNumbers(node.children)
+              return node.children.map((child) => (
+                <OutlineNode
+                  key={child.id}
+                  node={child}
+                  depth={depth + 1}
+                  searchQuery={searchQuery}
+                  listNumber={childListNums[child.id]}
+                />
+              ))
+            })()}
           </SortableContext>
         </div>
       )}

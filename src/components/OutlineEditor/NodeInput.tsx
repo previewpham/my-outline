@@ -30,6 +30,7 @@ interface NodeInputProps {
   headingLevel: HeadingLevel
   isSelected: boolean
   onFocus: () => void
+  onToggleNote: () => void
 }
 
 export function NodeInput({
@@ -41,6 +42,7 @@ export function NodeInput({
   headingLevel,
   isSelected,
   onFocus,
+  onToggleNote,
 }: NodeInputProps) {
   const divRef = useRef<HTMLDivElement>(null)
   const [isEditing, setIsEditing] = useState(false)
@@ -96,6 +98,13 @@ export function NodeInput({
   function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
     // 한글 IME 조합 중에는 단축키 무시
     if (e.nativeEvent.isComposing || e.key === 'Process') return
+
+    // Shift+Enter: 메모 토글
+    if (e.key === 'Enter' && e.shiftKey && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault()
+      onToggleNote()
+      return
+    }
 
     // Enter: 다음 형제 노드 추가
     if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {

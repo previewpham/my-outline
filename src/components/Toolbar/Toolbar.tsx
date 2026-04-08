@@ -7,6 +7,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useDocumentStore, useActiveDocument } from '../../store/documentStore'
 import { countWords } from '../../utils/nodeUtils'
 import { exportAsText, exportAsMarkdown, exportAsOpml } from '../../utils/exportUtils'
+import type { DateFormat } from '../../utils/dateUtils'
 
 export function Toolbar() {
   const doc = useActiveDocument()
@@ -23,11 +24,15 @@ export function Toolbar() {
     focusMode,
     toggleFocusMode,
     setPresentationMode,
+    dateFormat,
+    setDateFormat,
   } = useDocumentStore()
 
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleValue, setTitleValue] = useState('')
   const [exportOpen, setExportOpen] = useState(false)
+  const [dateFormatOpen, setDateFormatOpen] = useState(false)
+  const dateFormatRef = useRef<HTMLDivElement>(null)
   // 텍스트 복사 완료 피드백
   const [copiedText, setCopiedText] = useState(false)
   const exportRef = useRef<HTMLDivElement>(null)
@@ -45,6 +50,18 @@ export function Toolbar() {
     document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
   }, [exportOpen])
+
+  // 날짜 형식 드롭다운 외부 클릭 시 닫기 (4번 기능)
+  useEffect(() => {
+    if (!dateFormatOpen) return
+    function handleClick(e: MouseEvent) {
+      if (dateFormatRef.current && !dateFormatRef.current.contains(e.target as Node)) {
+        setDateFormatOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [dateFormatOpen])
 
   function startEditTitle() {
     if (!doc) return
@@ -408,6 +425,63 @@ export function Toolbar() {
               <line x1="12" y1="17" x2="12" y2="21" />
             </svg>
           </button>
+
+          {/* ─── 날짜 형식 설정 (4번 기능) ─── */}
+          <div ref={dateFormatRef} className="relative flex-shrink-0">
+            <button
+              onClick={() => setDateFormatOpen((v) => !v)}
+              className={`
+                flex-shrink-0 w-8 h-8 flex items-center justify-center
+                rounded-md transition-colors
+                ${dateFormatOpen
+                  ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400'
+                  : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
+                }
+              `}
+              title="날짜 표시 형식 설정"
+            >
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6">
+                <rect x="1" y="2" width="14" height="13" rx="2" />
+                <path d="M5 1v2M11 1v2M1 7h14" />
+                <path d="M4 10h2M7 10h2" strokeWidth="1.8" strokeLinecap="round" />
+              </svg>
+            </button>
+
+            {dateFormatOpen && (
+              <div className="
+                absolute right-0 top-full mt-1 z-50
+                w-52 bg-white dark:bg-gray-800
+                border border-gray-200 dark:border-gray-700
+                rounded-xl shadow-xl py-1 text-sm
+              ">
+                <div className="px-3 pt-1.5 pb-0.5">
+                  <span className="text-xs text-gray-400 dark:text-gray-500">날짜 표시 형식</span>
+                </div>
+                {([
+                  { key: 'relative',    label: '상대적',      example: '오늘, 내일, 3일 후' },
+                  { key: 'YYYY-MM-DD', label: 'YYYY-MM-DD', example: '2025-04-08' },
+                  { key: 'MM/DD/YYYY', label: 'MM/DD/YYYY', example: '04/08/2025' },
+                  { key: 'DD.MM.YYYY', label: 'DD.MM.YYYY', example: '08.04.2025' },
+                ] as { key: DateFormat; label: string; example: string }[]).map(({ key, label, example }) => (
+                  <button
+                    key={key}
+                    onClick={() => { setDateFormat(key); setDateFormatOpen(false) }}
+                    className={`
+                      w-full text-left px-3 py-2 flex items-center justify-between
+                      transition-colors
+                      ${dateFormat === key
+                        ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300'
+                        : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                      }
+                    `}
+                  >
+                    <span className="font-medium">{label}</span>
+                    <span className="text-xs text-gray-400 dark:text-gray-500">{example}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </>
       )}
 

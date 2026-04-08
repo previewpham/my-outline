@@ -22,6 +22,7 @@ import {
   cloneNodeTree,
 } from '../utils/nodeUtils'
 import { parseTags } from '../utils/tagUtils'
+import { setDateInContent, parseRecurrenceFromContent, getNextRecurrenceDate, type DateFilter, type DateFormat } from '../utils/dateUtils'
 
 const MAX_HISTORY = 50
 
@@ -44,6 +45,13 @@ interface AppState {
   mindmapTheme: 'blue' | 'green' | 'dark'
   searchQuery: string
   tagFilter: string
+
+  // 날짜 필터 (2그룹)
+  dateFilter: DateFilter
+  // 날짜 표시 형식 (4번 기능)
+  dateFormat: DateFormat
+  // 태그 패널 표시 여부 (5번 기능)
+  tagPanelOpen: boolean
 
   // 다중 선택 (드래그로 여러 항목 선택)
   multiSelectedIds: string[]
@@ -97,6 +105,7 @@ interface AppState {
   toggleNodeComplete: (id: string) => void
   setNodeColor: (id: string, color: string | null) => void
   setNodeHeading: (id: string, level: HeadingLevel) => void   // H1/H2/H3 설정
+  setNodeListType: (id: string, listType: 'none' | 'numbered') => void
   updateNodeRichText: (id: string, richText: string) => void  // 볼드/이탤릭 HTML 저장
   addNodeImage: (id: string, image: NodeImage) => void        // 이미지 첨부
   removeNodeImage: (id: string, imageId: string) => void      // 이미지 삭제
@@ -105,9 +114,13 @@ interface AppState {
 
   // --- 다중 선택 액션 ---
   setMultiSelected: (ids: string[]) => void   // 선택 목록 교체
+  toggleMultiSelected: (id: string) => void   // 단일 노드 선택 토글
   clearMultiSelected: () => void              // 선택 해제
   bulkIndent: () => void                      // 선택된 항목 전부 들여쓰기
   bulkOutdent: () => void                     // 선택된 항목 전부 내어쓰기
+  bulkDelete: () => void                      // 선택된 항목 전부 삭제
+  bulkSetColor: (color: string | null) => void // 선택된 항목 색상 일괄 변경
+  bulkToggleComplete: () => void              // 선택된 항목 완료 상태 일괄 토글
 
   // --- 포커스 뷰 ---
   setFocusedNode: (id: string | null) => void
@@ -115,6 +128,15 @@ interface AppState {
   // --- 집중 모드 / 프레젠테이션 ---
   toggleFocusMode: () => void
   setPresentationMode: (on: boolean) => void
+
+  // --- 날짜 액션 (2그룹) ---
+  setDateFilter: (filter: DateFilter) => void
+  setNodeDate: (id: string, date: string | null) => void
+  // 날짜 형식 설정 (4번 기능)
+  setDateFormat: (format: DateFormat) => void
+  // 태그 패널 (5번 기능)
+  toggleTagPanel: () => void
+  renameTag: (oldTag: string, newTag: string) => void
 
   // --- 뷰 / 테마 액션 ---
   setViewMode: (mode: ViewMode) => void
@@ -177,6 +199,9 @@ export const useDocumentStore = create<AppState>()(
       mindmapTheme: 'blue',
       searchQuery: '',
       tagFilter: '',
+      dateFilter: 'all',
+      dateFormat: 'relative',
+      tagPanelOpen: false,
       multiSelectedIds: [],
       focusedNodeId: null,
       focusMode: false,
@@ -413,6 +438,23 @@ export const useDocumentStore = create<AppState>()(
           const nodes = getActiveNodes(s as unknown as AppState)
           const node = findNode(nodes, id)
           if (!node) return
+
+          // ── 반복 날짜 처리 (2그룹): 완료 체크 시 다음 날짜로 자동 갱신 ──
+          const recurrence = parseRecurrenceFromContent(node.content)
+          if (recurrence && !node.completed) {
+            // 다음 반복 날짜를 계산하여 content의 특정 날짜 배지를 갱신
+            const nextDate = getNextRecurrenceDate(recurrence)
+            // 기존 특정 날짜 배지가 있으면 다음 날짜로 교체, 없으면 그대로 유지
+            const newContent = node.content.replace(
+              /!\(\d{4}-\d{2}-\d{2}\)/,
+              `!(${nextDate})`
+            )
+            // 완료 상태는 토글하지 않고 다음 날짜만 갱신 (자동 갱신이므로 미완료 유지)
+            const updated = updateNode(nodes, id, { content: newContent })
+            setActiveNodes(s as unknown as AppState, updated)
+            return
+          }
+
           const updated = updateNode(nodes, id, { completed: !node.completed })
           setActiveNodes(s as unknown as AppState, updated)
         })
@@ -430,6 +472,14 @@ export const useDocumentStore = create<AppState>()(
         set((s) => {
           const nodes = getActiveNodes(s as unknown as AppState)
           const updated = updateNode(nodes, id, { headingLevel: level })
+          setActiveNodes(s as unknown as AppState, updated)
+        })
+      },
+
+      setNodeListType(id, listType) {
+        set((s) => {
+          const nodes = getActiveNodes(s as unknown as AppState)
+          const updated = updateNode(nodes, id, { listType })
           setActiveNodes(s as unknown as AppState, updated)
         })
       },
@@ -514,6 +564,64 @@ export const useDocumentStore = create<AppState>()(
         })
       },
 
+      toggleMultiSelected(id) {
+        set((s) => {
+          const idx = s.multiSelectedIds.indexOf(id)
+          if (idx === -1) {
+            s.multiSelectedIds.push(id)
+          } else {
+            s.multiSelectedIds.splice(idx, 1)
+          }
+        })
+      },
+
+      bulkDelete() {
+        const { multiSelectedIds } = get()
+        if (multiSelectedIds.length === 0) return
+        set((s) => {
+          get().pushHistory()
+          let nodes = getActiveNodes(s as unknown as AppState)
+          for (const id of multiSelectedIds) {
+            const result = removeNode(nodes, id)
+            nodes = result.nodes
+          }
+          setActiveNodes(s as unknown as AppState, nodes)
+          s.multiSelectedIds = []
+          s.selectedNodeId = null
+        })
+      },
+
+      bulkSetColor(color) {
+        const { multiSelectedIds } = get()
+        if (multiSelectedIds.length === 0) return
+        set((s) => {
+          get().pushHistory()
+          let nodes = getActiveNodes(s as unknown as AppState)
+          for (const id of multiSelectedIds) {
+            nodes = updateNode(nodes, id, { color })
+          }
+          setActiveNodes(s as unknown as AppState, nodes)
+        })
+      },
+
+      bulkToggleComplete() {
+        const { multiSelectedIds } = get()
+        if (multiSelectedIds.length === 0) return
+        set((s) => {
+          get().pushHistory()
+          const nodes = getActiveNodes(s as unknown as AppState)
+          // 모두 완료 상태면 미완료로, 아니면 완료로
+          const selectedNodes = multiSelectedIds.map((id) => findNode(nodes, id)).filter(Boolean)
+          const allCompleted = selectedNodes.every((n) => n?.completed)
+          const newCompleted = !allCompleted
+          let updated = nodes
+          for (const id of multiSelectedIds) {
+            updated = updateNode(updated, id, { completed: newCompleted })
+          }
+          setActiveNodes(s as unknown as AppState, updated)
+        })
+      },
+
       // --- 클라우드 동기화 ---
 
       setCloudData(documents, folders) {
@@ -586,6 +694,67 @@ export const useDocumentStore = create<AppState>()(
 
       setTagFilter(tag) {
         set((s) => { s.tagFilter = tag })
+      },
+
+      // --- 날짜 액션 (2그룹) ---
+
+      setDateFilter(filter) {
+        set((s) => { s.dateFilter = filter })
+      },
+
+      setDateFormat(format) {
+        set((s) => { s.dateFormat = format })
+      },
+
+      // ── 태그 패널 (5번 기능) ──
+
+      toggleTagPanel() {
+        set((s) => { s.tagPanelOpen = !s.tagPanelOpen })
+      },
+
+      renameTag(oldTag, newTag) {
+        if (!oldTag || !newTag || oldTag === newTag) return
+        // oldTag/newTag는 # 또는 @ 포함 (예: '#work' → '#project')
+        const prefix = oldTag[0]  // '#' 또는 '@'
+        const oldName = oldTag.slice(1)
+        const newName = newTag.slice(1)
+        if (!oldName || !newName) return
+
+        set((s) => {
+          get().pushHistory()
+          const nodes = getActiveNodes(s as unknown as AppState)
+          const allFlatNodes = flattenTree(nodes)
+          // 태그 이름만 교체하는 정규식 (단어 경계 처리)
+          const tagRe = new RegExp(
+            `(?<![\\w가-힣])${prefix}${oldName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w가-힣])`,
+            'g'
+          )
+          let updated = nodes
+          for (const node of allFlatNodes) {
+            const newContent = node.content.replace(tagRe, `${prefix}${newName}`)
+            const newRichText = (node.richText ?? '').replace(tagRe, `${prefix}${newName}`)
+            if (newContent !== node.content || newRichText !== node.richText) {
+              updated = updateNode(updated, node.id, {
+                content: newContent,
+                richText: newRichText,
+                tags: parseTags(newContent),
+              })
+            }
+          }
+          setActiveNodes(s as unknown as AppState, updated)
+        })
+      },
+
+      setNodeDate(id, date) {
+        set((s) => {
+          get().pushHistory()
+          const nodes = getActiveNodes(s as unknown as AppState)
+          const node = findNode(nodes, id)
+          if (!node) return
+          const newContent = setDateInContent(node.content, date)
+          const updated = updateNode(nodes, id, { content: newContent })
+          setActiveNodes(s as unknown as AppState, updated)
+        })
       },
 
       // --- 실행취소 ---
